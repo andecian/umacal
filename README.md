@@ -1,4 +1,4 @@
-# UMA Monad Theory Visualizer
+# UMA Monad Theory Calculator
 
 A web-based simulator to visualize arithmetic operations based on "UMA Monad Theory."
 
