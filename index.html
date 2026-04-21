@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UMA Monad Theory Calculator</title>
+<style>
+:root {
+  --color-background-primary: #ffffff;
+  --color-background-secondary: #f8f9fa;
+  --color-background-info: #e6f1fb;
+  --color-background-warning: #fff4e5;
+  --color-text-primary: #202124;
+  --color-text-secondary: #5f6368;
+  --color-text-info: #0c447c;
+  --color-text-warning: #b06000;
+  --color-border-primary: #1a73e8;
+  --color-border-secondary: #dadce0;
+  --color-border-tertiary: #f1f3f4;
+  --border-radius-md: 6px;
+  --border-radius-lg: 12px;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: var(--font-sans); }
+.container { max-width: 800px; margin: 0 auto; padding: 1.5rem; }
+.title { font-size: 18px; font-weight: 500; color: var(--color-text-primary); margin: 0 0 4px; }
+.subtitle { font-size: 13px; color: var(--color-text-secondary); margin: 0 0 1.5rem; }
+.input-row { display: flex; align-items: center; gap: 10px; margin-bottom: 1rem; flex-wrap: wrap; }
+.input-row input[type=text] { width: 100px; padding: 6px; border: 1px solid var(--color-border-secondary); border-radius: 4px; font-size: 14px;}
+.op-btn { padding: 6px 14px; font-size: 16px; font-weight: 500; cursor: pointer; border: 0.5px solid var(--color-border-secondary); background: var(--color-background-primary); color: var(--color-text-primary); border-radius: var(--border-radius-md); }
+.op-btn.active { background: var(--color-background-secondary); border-color: var(--color-border-primary); }
+.calc-btn { padding: 6px 20px; font-size: 14px; font-weight: 500; cursor: pointer; border: 0.5px solid var(--color-border-secondary); background: var(--color-background-secondary); color: var(--color-text-primary); border-radius: var(--border-radius-md); }
+.result-card { background: var(--color-background-secondary); border-radius: var(--border-radius-lg); padding: 1rem 1.25rem; margin-bottom: 1.5rem; }
+.result-label { font-size: 12px; color: var(--color-text-secondary); margin: 0 0 4px; }
+.result-val { font-size: 24px; font-weight: 500; color: var(--color-text-primary); margin: 0; }
+.steps { border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); overflow: hidden; margin-bottom: 1.5rem; }
+.step { padding: 10px 1rem; border-bottom: 0.5px solid var(--color-border-tertiary); font-size: 14px; color: var(--color-text-primary); line-height: 1.4;}
+.step:last-child { border-bottom: none; }
+.step-num { display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--color-background-info); color: var(--color-text-info); font-size: 11px; font-weight: 500; text-align: center; line-height: 22px; margin-right: 8px; }
+.step-label { font-size: 12px; color: var(--color-text-secondary); display: block; margin-left: 30px; margin-top: 4px; }
+.viz-area { position: relative; width: 100%; height: 200px; }
+.section-label { font-size: 12px; font-weight: 500; color: var(--color-text-secondary); margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+.warn { font-size: 13px; color: var(--color-text-warning); background: var(--color-background-warning); border-radius: var(--border-radius-md); padding: 8px 12px; margin-bottom: 1rem; line-height: 1.4;}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h2 class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;">UMA Monad Theory Calculator</h2>
+  <p class="title">UMA Monad Theory Calculator</p>
+<p class="subtitle">Paper: https://philpapers.org/rec/MIYUMT</br>
+Author: Hirofumi Miyauchi</br>
+Code: AI(Claude, Gemini)</p>
+  <p class="subtitle">Visualizes arithmetic operations as mappings to the z-axis (existence layer). Supports 'inf', '-inf', or '∞'.</p>
+
+  <div class="input-row">
+    <input type="text" id="numA" value="5" placeholder="e.g. 5 or ∞">
+    <div style="display:flex;gap:6px;">
+      <button class="op-btn active" data-op="+" onclick="setOp(this)">+</button>
+      <button class="op-btn" data-op="-" onclick="setOp(this)">-</button>
+      <button class="op-btn" data-op="×" onclick="setOp(this)">×</button>
+      <button class="op-btn" data-op="÷" onclick="setOp(this)">÷</button>
+    </div>
+    <input type="text" id="numB" value="3" placeholder="e.g. 3 or ∞">
+    <button class="calc-btn" onclick="calculate()">=</button>
+  </div>
+
+  <div id="warn-area"></div>
+  <div id="result-area"></div>
+  <div id="steps-area"></div>
+  <div id="viz-area"></div>
+</div>
+
+<script>
+let currentOp = '+';
+
+function setOp(btn) {
+  document.querySelectorAll('.op-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentOp = btn.dataset.op;
+}
+
+function parseVal(str) {
+  str = str.trim().toLowerCase();
+  if (str === 'inf' || str === 'infinity' || str === '∞') return Infinity;
+  if (str === '-inf' || str === '-infinity' || str === '-∞') return -Infinity;
+  const parsed = parseFloat(str);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+function formatNum(v) {
+  if (v === Infinity) return '∞';
+  if (v === -Infinity) return '-∞';
+  if (isNaN(v)) return 'NaN';
+  return parseFloat(v.toFixed(6));
+}
+
+function formatL(v) {
+  if (v === Infinity) return '∞²';
+  if (v === -Infinity) return '-∞²';
+  return formatNum(v) + '∞';
+}
+
+function formatCx(x) {
+  if (x === null || isNaN(x)) return '—';
+  if (x === Infinity) return '∞/2';
+  if (x === -Infinity) return '-∞/2';
+  return (x/2).toFixed(2) + ' (' + (x / (8 * Math.PI)).toFixed(4) + '·8π)';
+}
+
+function calculate() {
+  const a = parseVal(document.getElementById('numA').value);
+  const b = parseVal(document.getElementById('numB').value);
+  const op = currentOp;
+  
+  let result, steps = [], isDivByZero = false;
+  const warnEl = document.getElementById('warn-area');
+
+  // UMA Math Logic handling Infinities
+  if (op === '+') {
+    if ((a === Infinity && b === -Infinity) || (a === -Infinity && b === Infinity)) result = 0; // UMA rules
+    else result = a + b;
+    
+    steps = [
+      {label: 'Extraction of Pure Layer (l-ification)', text: `l(${formatNum(a)}) = ${formatL(a)}`, note: 'Treats real numbers on the x-axis as infinite layers'},
+      {label: '', text: `l(${formatNum(b)}) = ${formatL(b)}`},
+      {label: 'Addition of Layers', text: `${formatL(a)} + ${formatL(b)} = ${formatL(result)}`},
+      {label: 'Reconnection to Absolute Coordinates (z-axis)', text: `z = ${formatL(result)} + 1∞`, note: 'Add portal base 1∞'},
+      {label: 'Result', text: `x = ${formatNum(result)}`, note: `State(${formatNum(result)}) = {x:${formatNum(result)}, z:${formatNum(result+1)}∞}`},
+    ];
+    warnEl.innerHTML = '';
+    
+  } else if (op === '-') {
+    if (a === Infinity && b === Infinity) result = 0; // UMA rule: ∞ - ∞ = 0
+    else if (a === -Infinity && b === -Infinity) result = 0;
+    else result = a - b;
+    
+    steps = [
+      {label: 'Extraction of Pure Layer (l-ification)', text: `l(${formatNum(a)}) = ${formatL(a)}`, note: 'Treats real numbers on the x-axis as infinite layers'},
+      {label: '', text: `l(${formatNum(b)}) = ${formatL(b)}`},
+      {label: 'Subtraction of Layers', text: `${formatL(a)} - ${formatL(b)} = ${formatL(result)}`},
+      {label: 'Reconnection to Absolute Coordinates (z-axis)', text: `z = ${formatL(result)} + 1∞`},
+      {label: 'Result', text: `x = ${formatNum(result)}`},
+    ];
+    warnEl.innerHTML = '';
+    
+  } else if (op === '×') {
+    if ((a === 0 && Math.abs(b) === Infinity) || (Math.abs(a) === Infinity && b === 0)) result = 0;
+    else result = a * b;
+    
+    steps = [
+      {label: 'Separation of Portal Base', text: `l(${formatNum(a)}) - l(0) → Pure Layer = ${formatL(a)}`},
+      {label: '', text: `l(${formatNum(b)}) - l(0) → Pure Layer = ${formatL(b)}`},
+      {label: 'Scaling Up of Layers (Leaping)', text: `${formatL(a)} × ${formatNum(b)} = ${formatL(result)}`, note: 'Multiplication = Leaping one pure layer by the other amount'},
+      {label: 'Reconnection to Portal Base', text: `${formatL(result)} + 1∞`, note: 'Convert relative distance to absolute coordinates'},
+      {label: 'Result', text: `x = ${formatNum(result)}`},
+    ];
+    warnEl.innerHTML = '';
+    
+  } else if (op === '÷') {
+    if (b === 0) {
+      isDivByZero = true;
+      result = null;
+      let y_coord = (a === Infinity) ? '-∞' : (a === -Infinity) ? '∞' : `-${formatNum(a+1)}`;
+      steps = [
+        {label: 'Checking the Starting Point', text: `'${formatNum(a)}' is positioned ${formatNum(a)} units along the x-axis.`},
+        {label: 'Function of \'÷ 0\'', text: 'Converts x-axis info to z-axis (depth of existence) via portal.', note: 'Dimensional conversion, not a mere calculation error.'},
+        {label: 'l-ification and Mapping to Portal Dimension', text: `l(${formatNum(a)} ÷ 0) = (l(0) - l(${formatNum(a)})) × 0⁻¹ = -${formatL(a)} · 0⁻¹`},
+        {label: 'Determination of Absolute Coordinates', text: `Position returned by ${formatNum(a)} from portal bottom 1∞.`},
+        {label: 'Result (3D Coordinates)', text: `x = 0, y(i) = ${y_coord}`, note: 'Defined as coordinates in portal space.'},
+      ];
+      warnEl.innerHTML = `<div class="warn">Division by Zero — In UMA Monad Theory, this is defined not as an 'error', but as an operation mapping x-axis info into the orthogonal portal dimension (0⁻¹).</div>`;
+    } else {
+      if (Math.abs(b) === Infinity) result = 0;
+      else result = a / b;
+      
+      steps = [
+        {label: 'Separation of Portal Base', text: `Pure Layer l(${formatNum(a)}) = ${formatL(a)}`},
+        {label: '', text: `Pure Layer l(${formatNum(b)}) = ${formatL(b)}`},
+        {label: 'Scaling Down of Layers (Falling)', text: `${formatL(a)} ÷ ${formatNum(b)} = ${formatL(result)}`, note: 'Division = Falling one pure layer by the other amount'},
+        {label: 'Reconnection to Portal Base', text: `${formatL(result)} + 1∞`},
+        {label: 'Result', text: `x = ${formatNum(result)}`},
+      ];
+      warnEl.innerHTML = '';
+    }
+  }
+
+  const rArea = document.getElementById('result-area');
+  if (isDivByZero) {
+    let y_coord = (a === Infinity) ? '-∞' : (a === -Infinity) ? '∞' : `-${formatNum(a+1)}`;
+    rArea.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem;">
+        <div class="result-card">
+          <p class="result-label">x-axis Coordinate</p>
+          <p class="result-val">0</p>
+        </div>
+        <div class="result-card" style="background:#fff4e5;">
+          <p class="result-label">y(i)-axis Coordinate (Portal)</p>
+          <p class="result-val" style="color:#b06000;">${y_coord}</p>
+        </div>
+      </div>`;
+  } else {
+    rArea.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:1.5rem;">
+        <div class="result-card">
+          <p class="result-label">x-axis (Real Result)</p>
+          <p class="result-val">${formatNum(result)}</p>
+        </div>
+        <div class="result-card">
+          <p class="result-label">z-layer (Depth)</p>
+          <p class="result-val" style="font-size:18px;">${formatNum(result+1)}∞</p>
+        </div>
+        <div class="result-card">
+          <p class="result-label">Cx (Spherical)</p>
+          <p class="result-val" style="font-size:16px;">${formatCx(result)}</p>
+        </div>
+      </div>`;
+  }
+
+  const sArea = document.getElementById('steps-area');
+  let stepHtml = '<p class="section-label">Operation Steps (UMA Recirculation)</p><div class="steps">';
+  steps.forEach((s, i) => {
+    if (s.label) {
+      stepHtml += `<div class="step"><span class="step-num">${i+1}</span><strong style="font-size:13px;color:var(--color-text-secondary);">${s.label}</strong><br><span style="margin-left:30px;font-size:14px;">${s.text}</span>`;
+    } else {
+      stepHtml += `<div class="step"><span style="margin-left:30px;font-size:14px;">${s.text}</span>`;
+    }
+    if (s.note) stepHtml += `<span class="step-label">${s.note}</span>`;
+    stepHtml += '</div>';
+  });
+  stepHtml += '</div>';
+  sArea.innerHTML = stepHtml;
+
+  drawViz(a, b, op, result, isDivByZero);
+}
+
+function drawViz(a, b, op, result, isDivByZero) {
+  const vArea = document.getElementById('viz-area');
+  const w = 640, h = 180;
+  const margin = {l: 60, r: 40, t: 30, b: 30};
+  const innerW = w - margin.l - margin.r;
+  const innerH = h - margin.t - margin.b;
+  
+  if (isDivByZero) {
+    let y_txt = (a === Infinity) ? '-∞' : (a === -Infinity) ? '∞' : `-${formatNum(a+1)}`;
+    vArea.innerHTML = `<p class="section-label">Information Conversion to Portal Dimension</p>
+      <svg viewBox="0 0 ${w} ${h}" width="100%" style="font-family:var(--font-sans);">
+        <line x1="${margin.l}" y1="${h/2}" x2="${w-margin.r}" y2="${h/2}" stroke="var(--color-border-secondary)" stroke-width="1"/>
+        <line x1="${w/2}" y1="${margin.t}" x2="${w/2}" y2="${h-margin.b}" stroke="var(--color-border-secondary)" stroke-width="1"/>
+        <text x="${w-margin.r+4}" y="${h/2+4}" font-size="11" fill="#0C447C">x</text>
+        <text x="${w/2+4}" y="${margin.t-4}" font-size="11" fill="#b06000">y(i)</text>
+        <circle cx="${margin.l + innerW * 0.7}" cy="${h/2}" r="5" fill="#378ADD"/>
+        <text x="${margin.l + innerW * 0.7}" y="${h/2-10}" font-size="11" fill="#0C447C" text-anchor="middle">a = ${formatNum(a)}</text>
+        <path d="M${margin.l + innerW * 0.7},${h/2} Q${margin.l + innerW * 0.7 + 20},${h/2} ${w/2},${h/2 - 50}" 
+          stroke="#EF9F27" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+        <circle cx="${w/2}" cy="${h/2-50}" r="5" fill="#EF9F27"/>
+        <text x="${w/2+10}" y="${h/2-50}" font-size="12" font-weight="500" fill="#b06000">y(i) = ${y_txt}</text>
+        <text x="${w/2}" y="${h/2+18}" font-size="11" fill="#085041" text-anchor="middle">0 (Portal)</text>
+        <defs><marker id="arr" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#EF9F27"/></marker></defs>
+        <text x="${w/2}" y="${margin.t}" font-size="11" fill="var(--color-text-secondary)" text-anchor="middle">x-axis info converts to y(i) dimension via portal</text>
+      </svg>`;
+    return;
+  }
+
+  const allVals = [a, b, result].filter(v => isFinite(v));
+  let minV = 0, maxV = 10;
+  if (allVals.length > 0) {
+    minV = Math.min(...allVals, 0);
+    maxV = Math.max(...allVals, 0);
+  }
+  const range = maxV - minV || 10;
+  const pad = range * 0.3;
+  const lo = minV - pad, hi = maxV + pad;
+
+  function xPos(v) {
+    if (v === Infinity) return w - margin.r + 15;
+    if (v === -Infinity) return margin.l - 15;
+    return margin.l + ((v - lo) / (hi - lo)) * innerW;
+  }
+  function zHeight(v) {
+    if (Math.abs(v) === Infinity) return innerH * 0.9;
+    const z = v + 1;
+    return Math.min(innerH * 0.7, Math.max(8, Math.log(Math.abs(z) + 1) * 20));
+  }
+
+  let svgContent = `<svg viewBox="0 0 ${w} ${h}" width="100%" style="font-family:var(--font-sans); overflow:visible;">`;
+  svgContent += `<line x1="${margin.l}" y1="${h/2}" x2="${w-margin.r}" y2="${h/2}" stroke="var(--color-border-secondary)" stroke-width="1"/>`;
+  svgContent += `<text x="${w-margin.r+4}" y="${h/2+4}" font-size="11" fill="#0C447C">x-axis</text>`;
+
+  const drawBar = (val, color, strokeColor, label, offsetY) => {
+    const ptX = xPos(val);
+    const zH = zHeight(val);
+    const isInf = Math.abs(val) === Infinity;
+    
+    if(isInf) {
+      svgContent += `<rect x="${ptX-4}" y="${h/2 - zH}" width="8" height="${zH}" rx="2" fill="${color}" stroke="${strokeColor}" stroke-width="0.5" stroke-dasharray="2,2"/>`;
+    } else {
+      svgContent += `<rect x="${ptX-4}" y="${h/2 - zH}" width="8" height="${zH}" rx="2" fill="${color}" stroke="${strokeColor}" stroke-width="0.5"/>`;
+    }
+    svgContent += `<text x="${ptX}" y="${h/2-zH-6 + offsetY}" font-size="11" font-weight="${label==='R'?'bold':'normal'}" fill="${strokeColor}" text-anchor="middle">${formatNum(val)}</text>`;
+  };
+
+  drawBar(a, "#B5D4F4", "#0C447C", "A", 0);
+  drawBar(b, "#9FE1CB", "#085041", "B", -12);
+  drawBar(result, "#FAC775", "#BA7517", "R", -24);
+
+  svgContent += `<text x="${w/2}" y="${margin.t - 10}" font-size="11" fill="var(--color-text-secondary)" text-anchor="middle">Bar height = z-axis existence layer | Blue=a, Green=b, Orange=Result</text>`;
+  
+  if (lo <= 0 && hi >= 0) {
+    const zeroX = xPos(0);
+    svgContent += `<line x1="${zeroX}" y1="${h/2-4}" x2="${zeroX}" y2="${h/2+4}" stroke="var(--color-border-primary)" stroke-width="1"/>`;
+    svgContent += `<text x="${zeroX}" y="${h/2+16}" font-size="10" fill="var(--color-text-secondary)" text-anchor="middle">0</text>`;
+  }
+
+  svgContent += '</svg>';
+  vArea.innerHTML = `<p class="section-label">z-axis (Existence Layer) Visualization</p>` + svgContent;
+}
+
+calculate();
+</script>
+</body>
+</html>
